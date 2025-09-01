@@ -7,17 +7,17 @@ A full-stack enterprise care analytics platform built entirely in Python with St
 
 
 ---
-## ❓ The Problem
+## The Problem
 
 Care facilities often struggle with scattered data across spreadsheets and paper files, making it difficult to make objective decisions. This leads to hidden inefficiencies, wasted resources, and challenges in proving the effectiveness of their programs to stakeholders like funders and regulators.
 
 ---
-## ✅ The Solution
+## The Solution
 
 Project Samantha solves this by providing a single, centralized platform to manage the entire data lifecycle. It empowers managers, clinicians, and administrators with the tools to track costs, measure client outcomes, and optimize their services for the best results.
 
 ---
-## ✨ Key Features
+## Key Features
 
 * **Secure Role-Based Authentication**: Different views and permissions for Administrators, Supervisors, and Staff. Includes a full password reset workflow.
 * **Interactive Dashboards**: Dynamic, filterable dashboards for high-level executive overviews, detailed individual progress tracking, and intervention analysis.
@@ -33,7 +33,7 @@ Project Samantha solves this by providing a single, centralized platform to mana
     * Clinical configurations, such as custom outcome metrics, assessment schedules, and standardized protocols.
 
 ---
-## 🛠️ Built With
+## Built With
 
 This project is a testament to the power of a modern data science stack:
 
@@ -45,7 +45,7 @@ This project is a testament to the power of a modern data science stack:
 * **PDF Generation**: [FPDF2](https://github.com/py-pdf/fpdf2)
 
 ---
-## 🚀 Getting Started
+## Getting Started
 
 To get a local copy up and running, follow these simple steps.
 
@@ -77,13 +77,11 @@ You need to have Python 3.8+ installed on your system.
     ```
 
 ---
-## 📄 License
+## License
 
 Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
-## 👤 Contact
+## Contact
 
-Your Name - [Link to your LinkedIn, Twitter, or Portfolio] - your.email@example.com
 
-Project Link: [https://github.com/your_username/project-samantha](https://github.com/your_username/project-samantha)
