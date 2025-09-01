@@ -1,0 +1,10 @@
+streamlit
+pandas
+duckdb
+numpy
+plotly
+kaleido
+scikit-learn
+scipy
+xgboost
+fpdf2
