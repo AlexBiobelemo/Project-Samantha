@@ -77,5 +77,3 @@ Project-Samantha/
 - Expand documentation with tutorials and API references.
 
 For more details, refer to the [main repository](https://github.com/AlexBiobelemo/Project-Samantha).
-
-*Note: This formatted version is based on standard recommendations for a project like Samantha. If the original file has specific content, please provide the raw Markdown text for accurate formatting.*
