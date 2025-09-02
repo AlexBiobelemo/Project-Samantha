@@ -66,7 +66,7 @@ A comprehensive suite of tools to transform raw data into strategic insights and
         * `Regulatory Compliance`: Generates an auditable log of all services delivered, formatted for compliance checks.
 
 ---
-## 🗂IV. Data & System Management
+## IV. Data & System Management
 
 A full administrative backend for managing the application's data, configuration, and operational logic.
 
