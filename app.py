@@ -472,7 +472,7 @@ def init_database():
             fiscal_year INTEGER UNIQUE NOT NULL,
             total_budget DECIMAL(12, 2),
             created_by VARCHAR,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -3978,8 +3978,8 @@ def show_financial_settings():
                         ON CONFLICT(fiscal_year) DO UPDATE SET
                             total_budget = excluded.total_budget,
                             created_by = excluded.created_by,
-                            updated_at = CURRENT_TIMESTAMP
-                    """, [str(uuid.uuid4()), selected_year, new_budget, st.session_state.user['id']])
+                            updated_at = ?
+                    """, [str(uuid.uuid4()), selected_year, new_budget, st.session_state.user['id'], datetime.now()])
                     st.success(f"Budget for {selected_year} saved as ${new_budget:,.2f}.")
                     st.rerun()
 
