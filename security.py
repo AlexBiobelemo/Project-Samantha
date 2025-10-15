@@ -18,10 +18,14 @@ def hash_password(password: str, salt: str = None) -> Tuple[str, str]:
     return base64.b64encode(password_hash).decode(), salt
 
 
-def verify_password(password: str, stored_hash: str, stored_salt: str) -> bool:
-    """Verify password with enhanced security using the stored salt"""
-    computed_hash, _ = hash_password(password, stored_salt)
-    return computed_hash == stored_hash
+def verify_password(password: str, stored_hash: str, stored_salt: Optional[str]) -> bool:
+    """Verify password with enhanced security using the stored salt, or fallback to legacy SHA256 if no salt."""
+    if stored_salt:
+        computed_hash, _ = hash_password(password, stored_salt)
+        return computed_hash == stored_hash
+    else:
+        # Fallback for legacy SHA256 hashes (without salt)
+        return hashlib.sha256(password.encode('utf-8')).hexdigest() == stored_hash
 
 
 def check_password_strength(password: str) -> Dict:
@@ -59,6 +63,9 @@ def authenticate_user(conn: Any, username: str, password: str) -> Optional[Dict]
         return None
 
     user_id, stored_hash, stored_salt, attempts, locked, active, expires, full_name, role, email = user_data
+    # Ensure stored_salt is treated as None if it's an empty string or not present (e.g., for legacy users)
+    if stored_salt == "":
+        stored_salt = None
 
     if locked or not active:
         return None
