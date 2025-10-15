@@ -16,6 +16,7 @@ def init_database():
             id VARCHAR PRIMARY KEY,
             username VARCHAR UNIQUE NOT NULL,
             password_hash VARCHAR NOT NULL,
+            salt VARCHAR NOT NULL, -- Added salt column
             role VARCHAR NOT NULL,
             email VARCHAR,
             full_name VARCHAR,
@@ -338,13 +339,13 @@ def _initialize_sample_data(conn):
     for username, password, role, email, full_name, dept, phone in users:
         user_id = str(uuid.uuid4())
         user_ids.append(user_id)
-        password_hash, _ = hash_password(password) # Use the secure hash_password function
+        password_hash, salt = hash_password(password) # Use the secure hash_password function and get salt
         password_expires = datetime.now() + timedelta(days=90)
 
         conn.execute("""
-            INSERT INTO users (id, username, password_hash, role, email, full_name, department, phone, password_expires)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [user_id, username, password_hash, role, email, full_name, dept, phone, password_expires])
+            INSERT INTO users (id, username, password_hash, salt, role, email, full_name, department, phone, password_expires)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [user_id, username, password_hash, salt, role, email, full_name, dept, phone, password_expires])
 
     # Create intervention categories and interventions
     intervention_data = [
