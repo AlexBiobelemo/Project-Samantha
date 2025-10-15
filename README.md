@@ -77,11 +77,6 @@ You need to have Python 3.8+ installed on your system.
     ```
 
 ---
-## License
 
-Distributed under the MIT License. See `LICENSE` for more information.
-
----
-## Contact
 
 
