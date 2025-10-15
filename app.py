@@ -1,34 +1,31 @@
 import streamlit as st
 import pandas as pd
-import duckdb
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 from datetime import datetime, date, timedelta
-import hashlib
-import uuid
 import io
 import json
-import base64
-from typing import Dict, List, Optional, Tuple
-import re
+from typing import List, Optional, Tuple
+import warnings
+import random
+from fpdf import FPDF
 from scipy import stats
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-import warnings
-import random
-from fpdf import FPDF
-import io
 from xgboost import XGBRegressor
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
-from sklearn.model_selection import GridSearchCV
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelEncoder
+
+from security import hash_password, verify_password, check_password_strength, authenticate_user, create_audit_log, generate_alert
+from database import init_database # Import init_database from database.py
+import uuid # Keep uuid for generating temporary passwords and other IDs within app.py
 
 
 class PDF(FPDF):
@@ -167,754 +164,32 @@ def show_forgot_password_form():
         username = st.text_input("Enter your username to reset your password")
         submitted = st.form_submit_button("Reset Password")
 
-        if submitted and username:
-            user_exists = conn.execute("SELECT id FROM users WHERE username = ?", [username]).fetchone()
-            if user_exists:
-                # Generate a secure temporary password
-                new_temp_password = f"temp_{uuid.uuid4().hex[:8]}"
-                password_hash, salt = hash_password(new_temp_password) # Assuming you use a modern hash function
-                
-                # Update the user's password and force a reset on next login
-                conn.execute("""
-                    UPDATE users 
-                    SET password_hash = ?, 
-                        login_attempts = 0, 
-                        account_locked = FALSE,
-                        password_expires = ?
-                    WHERE username = ?
-                """, [password_hash, datetime.now() + timedelta(days=1), username])
-                
-                st.success("A temporary password has been generated.")
-                st.info(f"For this demo, your temporary password is: **{new_temp_password}**")
-                st.warning("You will be required to change this password immediately after logging in.")
-            else:
-                st.error("No account found with that username.")
-    
-    if st.button("← Back to Login"):
-        del st.session_state.password_reset_flow
-        st.rerun()
-
-# Database initialization with enhanced schema
-@st.cache_resource
-def init_database():
-    """Initialize DuckDB database with comprehensive schema"""
-    conn = duckdb.connect('samantha_data.db')
-
-    # Users table with enhanced fields
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id VARCHAR PRIMARY KEY,
-            username VARCHAR UNIQUE NOT NULL,
-            password_hash VARCHAR NOT NULL,
-            role VARCHAR NOT NULL,
-            email VARCHAR,
-            full_name VARCHAR,
-            department VARCHAR,
-            phone VARCHAR,
-            last_login TIMESTAMP,
-            login_attempts INTEGER DEFAULT 0,
-            account_locked BOOLEAN DEFAULT FALSE,
-            password_expires TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            active BOOLEAN DEFAULT TRUE
-        )
-    """)
-
-    # Facilities table with comprehensive settings
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS facilities (
-            id VARCHAR PRIMARY KEY,
-            name VARCHAR NOT NULL,
-            license_number VARCHAR,
-            address TEXT,
-            phone VARCHAR,
-            email VARCHAR,
-            administrator_name VARCHAR,
-            capacity INTEGER,
-            currency VARCHAR DEFAULT '$',
-            timezone VARCHAR DEFAULT 'UTC',
-            fiscal_year_start INTEGER DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            active BOOLEAN DEFAULT TRUE
-        )
-    """)
-
-    # Enhanced interventions table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS interventions (
-            id VARCHAR PRIMARY KEY,
-            facility_id VARCHAR,
-            name VARCHAR NOT NULL,
-            category VARCHAR,
-            cost_per_session DECIMAL(10,2),
-            duration_minutes INTEGER,
-            group_size INTEGER DEFAULT 1,
-            staff_required INTEGER DEFAULT 1,
-            equipment_cost DECIMAL(10,2) DEFAULT 0,
-            material_cost_per_session DECIMAL(8,2) DEFAULT 0,
-            description TEXT,
-            evidence_level VARCHAR DEFAULT 'Unknown',
-            target_population TEXT,
-            contraindications TEXT,
-            created_by VARCHAR,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            active BOOLEAN DEFAULT TRUE
-        )
-    """)
-
-    # Enhanced outcome metrics with validation
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS outcome_metrics (
-            id VARCHAR PRIMARY KEY,
-            facility_id VARCHAR,
-            name VARCHAR NOT NULL,
-            category VARCHAR,
-            scale_min DECIMAL(8,2) DEFAULT 0,
-            scale_max DECIMAL(8,2) DEFAULT 10,
-            scale_type VARCHAR DEFAULT 'continuous',
-            unit_of_measure VARCHAR,
-            higher_is_better BOOLEAN DEFAULT TRUE,
-            clinical_significance_threshold DECIMAL(8,2),
-            description TEXT,
-            measurement_frequency VARCHAR DEFAULT 'per_session',
-            data_source VARCHAR,
-            created_by VARCHAR,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            active BOOLEAN DEFAULT TRUE
-        )
-    """)
-
-    # Enhanced individuals table with comprehensive demographics
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS individuals (
-            id VARCHAR PRIMARY KEY,
-            facility_id VARCHAR,
-            anonymous_id VARCHAR NOT NULL,
-            age_group VARCHAR,
-            gender VARCHAR,
-            disability_category VARCHAR,
-            disability_severity VARCHAR,
-            comorbidities TEXT,
-            support_level VARCHAR,
-            funding_source VARCHAR,
-            admission_date DATE,
-            discharge_date DATE,
-            guardian_consent BOOLEAN DEFAULT TRUE,
-            research_consent BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            active BOOLEAN DEFAULT TRUE
-        )
-    """)
-
-    # Enhanced outcome records with session tracking
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS outcome_records (
-            id VARCHAR PRIMARY KEY,
-            individual_id VARCHAR,
-            intervention_id VARCHAR,
-            outcome_metric_id VARCHAR,
-            session_id VARCHAR,
-            score DECIMAL(8,2),
-            baseline_score DECIMAL(8,2),
-            target_score DECIMAL(8,2),
-            session_date DATE,
-            session_duration INTEGER,
-            attendance_status VARCHAR DEFAULT 'attended',
-            staff_id VARCHAR,
-            location VARCHAR,
-            weather_conditions VARCHAR,
-            notes TEXT,
-            quality_rating INTEGER,
-            adverse_events TEXT,
-            recorded_by VARCHAR,
-            verified_by VARCHAR,
-            verification_date TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Cost tracking table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS cost_records (
-            id VARCHAR PRIMARY KEY,
-            intervention_id VARCHAR,
-            individual_id VARCHAR,
-            session_id VARCHAR,
-            direct_cost DECIMAL(10,2),
-            indirect_cost DECIMAL(10,2),
-            overhead_cost DECIMAL(10,2),
-            staff_cost DECIMAL(10,2),
-            material_cost DECIMAL(10,2),
-            equipment_depreciation DECIMAL(10,2),
-            cost_date DATE,
-            cost_category VARCHAR,
-            budget_line_item VARCHAR,
-            approved_by VARCHAR,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Goals and treatment plans
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS treatment_goals (
-            id VARCHAR PRIMARY KEY,
-            individual_id VARCHAR,
-            outcome_metric_id VARCHAR,
-            goal_type VARCHAR,
-            baseline_value DECIMAL(8,2),
-            target_value DECIMAL(8,2),
-            target_date DATE,
-            priority_level INTEGER,
-            status VARCHAR DEFAULT 'active',
-            progress_notes TEXT,
-            created_by VARCHAR,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Audit log for data changes
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS audit_log (
-            id VARCHAR PRIMARY KEY,
-            table_name VARCHAR NOT NULL,
-            record_id VARCHAR NOT NULL,
-            action VARCHAR NOT NULL,
-            old_values TEXT,
-            new_values TEXT,
-            changed_by VARCHAR,
-            change_reason TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # System settings and configurations
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS system_settings (
-            id VARCHAR PRIMARY KEY,
-            category VARCHAR NOT NULL,
-            setting_key VARCHAR NOT NULL,
-            setting_value TEXT,
-            description TEXT,
-            data_type VARCHAR DEFAULT 'string',
-            updated_by VARCHAR,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (category, setting_key), -- <-- ADD THIS LINE
-        )
-    """)
-
-    # Reports and analytics cache
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS report_cache (
-            id VARCHAR PRIMARY KEY,
-            report_type VARCHAR NOT NULL,
-            parameters TEXT,
-            result_data TEXT,
-            generated_by VARCHAR,
-            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMP
-        )
-    """)
-
-    # Alerts and notifications
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS alerts (
-            id VARCHAR PRIMARY KEY,
-            alert_type VARCHAR NOT NULL,
-            severity VARCHAR DEFAULT 'info',
-            title VARCHAR NOT NULL,
-            message TEXT,
-            target_user VARCHAR,
-            target_role VARCHAR,
-            related_entity_type VARCHAR,
-            related_entity_id VARCHAR,
-            is_read BOOLEAN DEFAULT FALSE,
-            action_required BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMP
-        )
-    """)
-    
-    # Table for assessment schedules
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS assessment_schedules (
-            id VARCHAR PRIMARY KEY,
-            individual_id VARCHAR NOT NULL,
-            outcome_metric_id VARCHAR NOT NULL,
-            frequency VARCHAR NOT NULL,
-            start_date DATE NOT NULL,
-            next_due_date DATE NOT NULL,
-            created_by VARCHAR,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS clinical_protocols (
-            id VARCHAR PRIMARY KEY,
-            name VARCHAR UNIQUE NOT NULL,
-            steps TEXT,
-            created_by VARCHAR,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # Table for budget planning
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS budgets (
-            id VARCHAR PRIMARY KEY,
-            fiscal_year INTEGER UNIQUE NOT NULL,
-            total_budget DECIMAL(12, 2),
-            created_by VARCHAR,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Initialize with comprehensive sample data
-    _initialize_sample_data(conn)
-
-    return conn
-
-
-def _initialize_sample_data(conn):
-    """Initialize comprehensive sample data"""
-    # Check if data already exists
-    admin_exists = conn.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'").fetchone()[0]
-    if admin_exists > 0:
-        return
-
-    # Create facility
-    facility_id = str(uuid.uuid4())
-    conn.execute("""
-        INSERT INTO facilities (id, name, license_number, address, phone, administrator_name, capacity, currency)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, [
-        facility_id,
-        'Samantha Care Center',
-        'LIC-2024-001',
-        '123 Care Drive, Healthcare City, HC 12345',
-        '(555) 123-4567',
-        'Dr. Sarah Johnson',
-        120,
-        '$'
-    ])
-
-    # Create users
-    users = [
-        ('admin', 'admin123', 'Administrator', 'admin@Samantha.com', 'System Administrator', 'Administration',
-         '(555) 100-0001'),
-        ('therapist1', 'therapy123', 'Staff', 'therapist1@Samantha.com', 'Emily Rodriguez', 'Therapy Services',
-         '(555) 100-0002'),
-        ('nurse1', 'nurse123', 'Staff', 'nurse1@Samantha.com', 'Michael Chen', 'Nursing', '(555) 100-0003'),
-        ('supervisor1', 'super123', 'Supervisor', 'supervisor1@Samantha.com', 'Lisa Thompson', 'Clinical Services',
-         '(555) 100-0004'),
-    ]
-
-    user_ids = []
-    for username, password, role, email, full_name, dept, phone in users:
-        user_id = str(uuid.uuid4())
-        user_ids.append(user_id)
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        password_expires = datetime.now() + timedelta(days=90)
-
-        conn.execute("""
-            INSERT INTO users (id, username, password_hash, role, email, full_name, department, phone, password_expires)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [user_id, username, password_hash, role, email, full_name, dept, phone, password_expires])
-
-    # Create intervention categories and interventions
-    intervention_data = [
-        ('Physical Therapy', 'Therapy Services', 85.00, 45, 1, 1,
-         'Individual physical therapy sessions focusing on mobility and strength', 'High',
-         'Individuals with mobility limitations'),
-        ('Speech Therapy', 'Therapy Services', 90.00, 60, 1, 1, 'Individual speech and language therapy', 'High',
-         'Communication disorders'),
-        ('Occupational Therapy', 'Therapy Services', 80.00, 45, 1, 1,
-         'Daily living skills and adaptive equipment training', 'High', 'ADL limitations'),
-        ('Group Social Skills', 'Behavioral Services', 35.00, 90, 6, 1,
-         'Group-based social interaction and communication training', 'Medium', 'Social skill deficits'),
-        ('Art Therapy', 'Creative Services', 65.00, 60, 4, 1,
-         'Creative expression and emotional processing through art', 'Medium', 'Emotional regulation needs'),
-        ('Music Therapy', 'Creative Services', 70.00, 45, 3, 1, 'Music-based therapeutic interventions', 'Medium',
-         'Communication and emotional needs'),
-        ('Behavioral Support', 'Behavioral Services', 95.00, 30, 1, 1, 'Individual behavioral intervention and support',
-         'High', 'Challenging behaviors'),
-        ('Vocational Training', 'Life Skills', 60.00, 120, 8, 1, 'Job skills and workplace readiness training',
-         'Medium', 'Individuals seeking employment'),
-        ('Recreational Therapy', 'Recreation', 45.00, 75, 8, 1,
-         'Structured recreational activities with therapeutic goals', 'Low', 'General population'),
-        ('Cognitive Training', 'Educational Services', 75.00, 45, 2, 1,
-         'Cognitive skill development and memory training', 'Medium', 'Cognitive impairments'),
-    ]
-
-    intervention_ids = []
-    for name, category, cost, duration, group_size, staff, description, evidence, target in intervention_data:
-        intervention_id = str(uuid.uuid4())
-        intervention_ids.append((intervention_id, name))
-
-        conn.execute("""
-            INSERT INTO interventions (
-                id, facility_id, name, category, cost_per_session, duration_minutes, 
-                group_size, staff_required, description, evidence_level, target_population,
-                created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            intervention_id, facility_id, name, category, cost, duration,
-            group_size, staff, description, evidence, target, user_ids[0]
-        ])
-
-    # Create outcome metrics
-    outcome_metrics_data = [
-        ('Social Interaction Score', 'Social Skills', 1, 10, 'continuous', 'points', True, 1.0,
-         'Measures quality and frequency of social interactions'),
-        ('Daily Living Skills', 'Life Skills', 0, 100, 'percentage', '%', True, 10.0,
-         'Percentage of daily tasks completed independently'),
-        ('Communication Effectiveness', 'Communication', 1, 5, 'ordinal', 'level', True, 1.0,
-         'Level of communication effectiveness'),
-        ('Behavioral Episodes', 'Behavior', 0, 20, 'count', 'episodes/week', False, 2.0,
-         'Number of challenging behavioral episodes per week'),
-        ('Mobility Score', 'Physical', 0, 100, 'percentage', '%', True, 15.0, 'Functional mobility assessment score'),
-        ('Mood Rating', 'Emotional', 1, 10, 'continuous', 'rating', True, 2.0, 'Self-reported or observed mood rating'),
-        ('Task Completion Rate', 'Cognitive', 0, 100, 'percentage', '%', True, 20.0,
-         'Percentage of assigned tasks completed successfully'),
-        ('Medication Compliance', 'Health', 0, 100, 'percentage', '%', True, 10.0, 'Medication adherence rate'),
-        ('Sleep Quality', 'Health', 1, 10, 'continuous', 'rating', True, 1.5, 'Sleep quality rating'),
-        ('Pain Level', 'Health', 0, 10, 'continuous', 'rating', False, 2.0, 'Self-reported pain level'),
-    ]
-
-    metric_ids = []
-    for name, category, min_val, max_val, scale_type, unit, higher_better, threshold, description in outcome_metrics_data:
-        metric_id = str(uuid.uuid4())
-        metric_ids.append((metric_id, name))
-
-        conn.execute("""
-            INSERT INTO outcome_metrics (
-                id, facility_id, name, category, scale_min, scale_max, scale_type,
-                unit_of_measure, higher_is_better, clinical_significance_threshold,
-                description, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            metric_id, facility_id, name, category, min_val, max_val, scale_type,
-            unit, higher_better, threshold, description, user_ids[0]
-        ])
-
-    # Create individuals with realistic demographics
-    age_groups = ['18-30', '31-45', '46-60', '60+']
-    genders = ['Male', 'Female', 'Non-binary', 'Prefer not to say']
-    disabilities = ['Intellectual Disability', 'Autism Spectrum Disorder', 'Down Syndrome', 'Cerebral Palsy',
-                    'Traumatic Brain Injury', 'Multiple Disabilities']
-    severities = ['Mild', 'Moderate', 'Severe', 'Profound']
-    support_levels = ['Intermittent', 'Limited', 'Extensive', 'Pervasive']
-    funding_sources = ['State Funding', 'Medicaid', 'Private Insurance', 'Private Pay', 'Mixed Funding']
-
-    random.seed(42)  # For reproducible sample data
-
-    individual_ids = []
-    for i in range(50):  # Create 50 individuals
-        individual_id = str(uuid.uuid4())
-        individual_ids.append(individual_id)
-
-        age_group = random.choice(age_groups)
-        gender = random.choice(genders)
-        disability = random.choice(disabilities)
-        severity = random.choice(severities)
-        support = random.choice(support_levels)
-        funding = random.choice(funding_sources)
-
-        # Generate admission date within last 2 years
-        start_date = date(2022, 1, 1)
-        end_date = date(2024, 12, 31)
-        days_between = (end_date - start_date).days
-        random_days = random.randint(0, days_between)
-        admission_date = start_date + timedelta(days=random_days)
-
-        conn.execute("""
-            INSERT INTO individuals (
-                id, facility_id, anonymous_id, age_group, gender, disability_category,
-                disability_severity, support_level, funding_source, admission_date,
-                guardian_consent, research_consent
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            individual_id, facility_id, f'ID-{i + 1:03d}', age_group, gender, disability,
-            severity, support, funding, admission_date, True, random.choice([True, False])
-        ])
-
-    # Generate comprehensive outcome data with realistic patterns
-    _generate_realistic_outcome_data(conn, individual_ids, intervention_ids, metric_ids, user_ids)
-
-    # Create treatment goals
-    for individual_id in individual_ids[:20]:  # Goals for first 20 individuals
-        for metric_id, metric_name in metric_ids[:5]:  # Goals for first 5 metrics
-            if random.random() < 0.6:  # 60% chance of having a goal for each metric
-                goal_id = str(uuid.uuid4())
-                baseline = random.uniform(2, 6)
-                target = min(baseline + random.uniform(1, 4), 10)
-                target_date = date.today() + timedelta(days=random.randint(30, 180))
-
-                conn.execute("""
-                    INSERT INTO treatment_goals (
-                        id, individual_id, outcome_metric_id, goal_type, baseline_value,
-                        target_value, target_date, priority_level, created_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, [
-                    goal_id, individual_id, metric_id, 'Improvement', baseline,
-                    target, target_date, random.randint(1, 3), user_ids[0]
-                ])
-
-    # Initialize system settings
-    system_settings = [
-        ('security', 'max_login_attempts', '3', 'Maximum failed login attempts before account lock'),
-        ('security', 'password_expiry_days', '90', 'Number of days before password expires'),
-        ('analytics', 'statistical_significance_level', '0.05', 'P-value threshold for statistical significance'),
-        ('reporting', 'default_date_range_months', '6', 'Default date range for reports in months'),
-        ('alerts', 'low_attendance_threshold', '80', 'Attendance percentage below which to generate alerts'),
-        ('quality', 'minimum_session_rating', '3', 'Minimum acceptable session quality rating'),
-    ]
-
-    for category, key, value, description in system_settings:
-        setting_id = str(uuid.uuid4())
-        conn.execute("""
-            INSERT INTO system_settings (id, category, setting_key, setting_value, description, updated_by)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, [setting_id, category, key, value, description, user_ids[0]])
-
-
-def _generate_realistic_outcome_data(conn, individual_ids, intervention_ids, metric_ids, user_ids):
-    """Generate realistic outcome data with trends and patterns"""
-    random.seed(42)
-
-    # Generate data for each individual
-    for individual_id in individual_ids:
-        # Each individual participates in 2-5 interventions
-        num_interventions = random.randint(2, 5)
-        selected_interventions = random.sample(intervention_ids, num_interventions)
-
-        for intervention_id, intervention_name in selected_interventions:
-            # Each intervention tracks 3-6 outcome metrics
-            num_metrics = random.randint(3, 6)
-            selected_metrics = random.sample(metric_ids, num_metrics)
-
-            # Generate 3-18 months of data
-            start_date = date(2023, 1, 1) + timedelta(days=random.randint(0, 365))
-            num_sessions = random.randint(10, 60)
-
-            for metric_id, metric_name in selected_metrics:
-                # Create baseline score and improvement pattern
-                if 'Behavioral Episodes' in metric_name or 'Pain Level' in metric_name:
-                    # Lower is better for these metrics
-                    baseline_score = random.uniform(5, 9)
-                    improvement_rate = random.uniform(-0.02, -0.08)  # Negative improvement (reduction)
-                else:
-                    # Higher is better for most metrics
-                    baseline_score = random.uniform(2, 5)
-                    improvement_rate = random.uniform(0.01, 0.06)  # Positive improvement
-
-                current_score = baseline_score
-
-                for session_num in range(num_sessions):
-                    session_id = str(uuid.uuid4())
-                    record_id = str(uuid.uuid4())
-
-                    # Calculate session date
-                    days_elapsed = session_num * random.randint(3, 14)  # Sessions every 3-14 days
-                    session_date = start_date + timedelta(days=days_elapsed)
-
-                    # Apply improvement trend with some noise
-                    trend_improvement = improvement_rate * session_num
-                    noise = random.uniform(-0.3, 0.3)
-                    current_score = baseline_score + trend_improvement + noise
-
-                    # Apply bounds based on metric
-                    if 'Behavioral Episodes' in metric_name:
-                        current_score = max(0, min(20, current_score))
-                    elif 'Daily Living Skills' in metric_name or 'Task Completion Rate' in metric_name or 'Medication Compliance' in metric_name:
-                        current_score = max(0, min(100, current_score))
-                    elif 'Pain Level' in metric_name:
-                        current_score = max(0, min(10, current_score))
-                    else:
-                        current_score = max(1, min(10, current_score))
-
-                    # Attendance status (90% attendance rate)
-                    attendance = 'attended' if random.random() < 0.9 else random.choice(['absent', 'partial'])
-
-                    # Session quality rating (mostly good ratings)
-                    quality_weights = [0.05, 0.1, 0.2, 0.35, 0.3]  # Weights for ratings 1-5
-                    quality_rating = random.choices([1, 2, 3, 4, 5], weights=quality_weights)[0]
-
-                    # Session duration (with some variation)
-                    planned_duration = 45  # Default duration
-                    actual_duration = planned_duration + random.randint(-10, 15)
-
-                    # Staff assignment
-                    staff_id = random.choice(user_ids[1:])  # Exclude admin
-
-                    # Insert outcome record
-                    conn.execute("""
-                        INSERT INTO outcome_records (
-                            id, individual_id, intervention_id, outcome_metric_id, session_id,
-                            score, baseline_score, session_date, session_duration, attendance_status,
-                            staff_id, quality_rating, recorded_by
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, [
-                        record_id, individual_id, intervention_id, metric_id, session_id,
-                        round(current_score, 2), round(baseline_score, 2), session_date,
-                        actual_duration, attendance, staff_id, quality_rating, staff_id
-                    ])
-
-                    # Generate cost record
-                    cost_record_id = str(uuid.uuid4())
-                    base_cost = random.uniform(50, 100)
-                    material_cost = random.uniform(2, 15)
-                    overhead = base_cost * 0.3
-
-                    conn.execute("""
-                        INSERT INTO cost_records (
-                            id, intervention_id, individual_id, session_id, direct_cost,
-                            indirect_cost, overhead_cost, material_cost, cost_date
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, [
-                        cost_record_id, intervention_id, individual_id, session_id,
-                        base_cost, 0, overhead, material_cost, session_date
-                    ])
-
-                    # Occasionally skip sessions to create realistic gaps
-                    if random.random() < 0.1:  # 10% chance to skip next session
-                        continue
-
-
-# Enhanced Authentication and Security
-def hash_password(password: str, salt: str = None) -> Tuple[str, str]:
-    """Enhanced password hashing with salt"""
-    if salt is None:
-        salt = base64.b64encode(uuid.uuid4().bytes).decode()
-
-    # Use PBKDF2 for better security
-    password_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
-    return base64.b64encode(password_hash).decode(), salt
-
-
-def verify_password(password: str, password_hash: str, salt: str = None) -> bool:
-    """Verify password with enhanced security"""
-    if salt:
-        computed_hash, _ = hash_password(password, salt)
-        return computed_hash == password_hash
-    else:
-        # Fallback for legacy hashes
-        return hashlib.sha256(password.encode()).hexdigest() == password_hash
-
-
-def check_password_strength(password: str) -> Dict:
-    """Check password strength and return requirements"""
-    requirements = {
-        'length': len(password) >= 8,
-        'uppercase': bool(re.search(r'[A-Z]', password)),
-        'lowercase': bool(re.search(r'[a-z]', password)),
-        'digit': bool(re.search(r'\d', password)),
-        'special': bool(re.search(r'[!@#$%^&*(),.?":{}|<>]', password)),
-    }
-
-    score = sum(requirements.values())
-    strength = 'Very Weak' if score < 2 else 'Weak' if score < 3 else 'Medium' if score < 4 else 'Strong' if score < 5 else 'Very Strong'
-
-    return {
-        'score': score,
-        'strength': strength,
-        'requirements': requirements,
-        'is_valid': score >= 4
-    }
-
-
-def authenticate_user(username: str, password: str) -> Optional[Dict]:
-    """Enhanced authentication with security features"""
-    conn = st.session_state.db_conn
-
-    # Check if account is locked
-    user_data = conn.execute("""
-        SELECT id, password_hash, login_attempts, account_locked, active, password_expires, full_name, role, email
-        FROM users WHERE username = ?
-    """, [username]).fetchone()
-
-    if not user_data:
-        return None
-
-    user_id, stored_hash, attempts, locked, active, expires, full_name, role, email = user_data
-
-    if locked or not active:
-        return None
-
-    # Check password expiration
-    if expires and datetime.now() > expires:
-        return {'error': 'password_expired'}
-
-    # Verify password (using legacy method for existing data)
-    if verify_password(password, stored_hash):
-        # Reset login attempts on successful login
-        conn.execute("""
-            UPDATE users 
-            SET login_attempts = 0, last_login = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, [user_id])
-
-        return {
-            'id': user_id,
-            'username': username,
-            'role': role,
-            'email': email,
-            'full_name': full_name,
-            'active': active
-        }
-    else:
-        # Increment login attempts
-        new_attempts = attempts + 1
-        lock_account = new_attempts >= 3
-
-        conn.execute("""
-            UPDATE users 
-            SET login_attempts = ?, account_locked = ?
-            WHERE id = ?
-        """, [new_attempts, lock_account, user_id])
-
-        return None
-
-
-def create_audit_log(table_name: str, record_id: str, action: str, old_values: Dict = None, new_values: Dict = None,
-                     reason: str = None):
-    """Create audit log entry for data changes"""
-    conn = st.session_state.db_conn
-
-    log_id = str(uuid.uuid4())
-    user_id = st.session_state.user['id'] if 'user' in st.session_state else None
-
-    conn.execute("""
-        INSERT INTO audit_log (id, table_name, record_id, action, old_values, new_values, changed_by, change_reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, [
-        log_id, table_name, record_id, action,
-        json.dumps(old_values) if old_values else None,
-        json.dumps(new_values) if new_values else None,
-        user_id, reason
-    ])
-
-
-def generate_alert(alert_type: str, severity: str, title: str, message: str, target_user: str = None,
-                   target_role: str = None):
-    """Generate system alert"""
-    conn = st.session_state.db_conn
-
-    alert_id = str(uuid.uuid4())
-    expires_at = datetime.now() + timedelta(days=30)
-
-    conn.execute("""
-        INSERT INTO alerts (id, alert_type, severity, title, message, target_user, target_role, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, [alert_id, alert_type, severity, title, message, target_user, target_role, expires_at])
-
+    if submitted and username:
+        user_exists = conn.execute("SELECT id FROM users WHERE username = ?", [username]).fetchone()
+        if user_exists:
+            # Generate a secure temporary password
+            new_temp_password = f"temp_{uuid.uuid4().hex[:8]}"
+            password_hash, salt = hash_password(new_temp_password) # Assuming you use a modern hash function
+            
+            # Update the user's password and force a reset on next login
+            conn.execute("""
+                UPDATE users
+                SET password_hash = ?,
+                    login_attempts = 0,
+                    account_locked = FALSE,
+                    password_expires = ?
+                WHERE username = ?
+            """, [password_hash, datetime.now() + timedelta(days=1), username])
+            
+            st.success("A temporary password has been generated.")
+            st.info(f"For this demo, your temporary password is: **{new_temp_password}**")
+            st.warning("You will be required to change this password immediately after logging in.")
+        else:
+            st.error("No account found with that username.")
+        
+        if st.button("← Back to Login"):
+            del st.session_state.password_reset_flow
+            st.rerun()
 
 # Advanced Analytics Functions
 def calculate_statistical_significance(data1, data2, test_type='ttest'):
@@ -943,6 +218,7 @@ def calculate_effect_size(data1, data2):
         return None
 
 
+@st.cache_data(ttl=3600) # Cache for 1 hour
 def perform_predictive_modeling(outcome_data):
     """
     Perform predictive modeling using a tuned classification pipeline.
@@ -1069,6 +345,7 @@ def get_individuals():
         ORDER BY admission_date
     """).df()
 
+@st.cache_data(ttl=3600) # Cache for 1 hour
 def get_comprehensive_outcome_data(date_range=None, filters=None):
     """Get comprehensive outcome data with a robust cleaning and imputation pipeline."""
     conn = st.session_state.db_conn
@@ -1176,6 +453,7 @@ def get_comprehensive_outcome_data(date_range=None, filters=None):
     return df
 
 
+@st.cache_data(ttl=3600) # Cache for 1 hour
 def get_advanced_analytics():
     """Generate advanced analytics and insights"""
     data = get_comprehensive_outcome_data()
@@ -1303,7 +581,7 @@ def login_form():
 
             if submitted:
                 if username and password:
-                    user = authenticate_user(username, password)
+                    user = authenticate_user(st.session_state.db_conn, username, password)
                     if user:
                         if user.get('error') == 'password_expired':
                             st.session_state.password_reset_required = True
@@ -1721,7 +999,7 @@ def show_statistical_analysis(analytics, outcome_data):
             direction = "positive" if corr['correlation'] > 0 else "negative"
             strength = "strong" if abs(corr['correlation']) > 0.7 else "moderate"
             st.write(
-                f"? **{strength.capitalize()} {direction} correlation** between {corr['var1']} and {corr['var2']} (r = {corr['correlation']:.3f})")
+                f" **{strength.capitalize()} {direction} correlation** between {corr['var1']} and {corr['var2']} (r = {corr['correlation']:.3f})")
 
 
 def show_predictive_insights(outcome_data):
@@ -1893,7 +1171,7 @@ def show_performance_benchmarks(analytics, outcome_data):
             for _, row in underperforming.iterrows():
                 category_name = row[selected_benchmark]
                 performance_gap = overall_avg - row['avg_outcome']
-                st.write(f"? **{category_name}:** {performance_gap:.1f} points below average")
+                st.write(f" **{category_name}:** {performance_gap:.1f} points below average")
         else:
             st.success("All categories performing within acceptable ranges")
 
@@ -2353,12 +1631,17 @@ def show_individual_goal_tracking(individual_id):
         current_value = latest_score[0] if latest_score else goal['baseline_value']
 
         # Calculate progress
+        # Ensure all values are floats for arithmetic operations
+        baseline_val = float(goal['baseline_value'])
+        target_val = float(goal['target_value'])
+        current_val = float(current_value)
+
         if goal['higher_is_better']:
-            progress = ((current_value - goal['baseline_value']) / (
-                    goal['target_value'] - goal['baseline_value'])) * 100
+            progress = ((current_val - baseline_val) / (
+                    target_val - baseline_val)) * 100
         else:
-            progress = ((goal['baseline_value'] - current_value) / (
-                    goal['baseline_value'] - goal['target_value'])) * 100
+            progress = ((baseline_val - current_val) / (
+                    baseline_val - target_val)) * 100
 
         progress = max(0, min(100, progress))  # Clamp between 0-100%
 
@@ -2694,9 +1977,11 @@ def show_smart_data_entry():
 
                         # Create audit log
                         create_audit_log(
+                            st.session_state.db_conn, # Pass the connection
                             'outcome_records', session_id, 'INSERT',
                             new_values={'session_count': len(outcome_scores), 'intervention': selected_intervention.get('name', 'Unknown')},
-                            reason='Regular session recording via Smart Data Entry'
+                            reason='Regular session recording via Smart Data Entry',
+                            changed_by_user_id=st.session_state.user['id'] # Pass the user ID
                         )
                         
                         st.success("Session recorded successfully!")
@@ -3051,7 +2336,7 @@ def show_data_quality_monitor():
 
     st.markdown("---")
     
-    tab1, tab2 = st.tabs([" Issues Overview", "? Interactive Correction Tool"])
+    tab1, tab2 = st.tabs([" Issues Overview", " Interactive Correction Tool"])
 
     with tab1:
         st.markdown("##### At a Glance")
@@ -3416,7 +2701,7 @@ def show_data_integration_tools():
 
             if st.form_submit_button("Import Data"):
                 with st.spinner("Processing file and importing data..."):
-                    st.success("? Import complete! 25 records imported, 2 duplicates skipped.")
+                    st.success("Import complete! 25 records imported, 2 duplicates skipped.")
     
     elif integration_type == "Billing Systems":
         st.markdown("#####  Billing System Integration")
@@ -3455,10 +2740,10 @@ def show_data_integration_tools():
             
             if st.form_submit_button("Connect and Run Initial Sync"):
                 with st.spinner("Connecting to PubMed and fetching data..."):
-                    st.success("? Connection successful! Updated evidence levels for 12 interventions.")
+                    st.success("Connection successful! Updated evidence levels for 12 interventions.")
 
     elif integration_type == "Government Reporting":
-        st.markdown("##### ? Regulatory Reporting Automation")
+        st.markdown("#####  Regulatory Reporting Automation")
         st.write("This tool helps generate reports formatted for common government and regulatory bodies.")
         
         agency = st.selectbox("Reporting Agency", ["CMS (Centers for Medicare & Medicaid Services)", "State Licensing Board"])
@@ -3739,8 +3024,12 @@ def show_facility_management():
 
                 for category, key, value in settings_to_update:
                     conn.execute("""
-                        INSERT OR REPLACE INTO system_settings (id, category, setting_key, setting_value, updated_by, updated_at)
+                        INSERT INTO system_settings (id, category, setting_key, setting_value, updated_by, updated_at)
                         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(category, setting_key) DO UPDATE SET
+                            setting_value = EXCLUDED.setting_value,
+                            updated_by = EXCLUDED.updated_by,
+                            updated_at = EXCLUDED.updated_at
                     """, [str(uuid.uuid4()), category, key, value, st.session_state.user['id']])
 
                 st.success("Facility profile updated successfully!")
@@ -3821,7 +3110,7 @@ def show_clinical_configuration():
 
     # TAB 2: Assessment Schedules (Already Implemented) ---
     with config_tab2:
-        st.markdown("##### ? Assessment Scheduling")
+        st.markdown("#####  Assessment Scheduling")
         st.write("Set up recurring assessment schedules for individuals to generate reminders and track compliance.")
         
         individuals = get_individuals()
@@ -4121,7 +3410,7 @@ def show_system_maintenance():
         elif days_since_activity > 3:
             st.info(" Consider data entry reminders")
         else:
-            st.success("? Active data collection")
+            st.success("Active data collection")
 
     # Maintenance operations
     st.markdown("#### Maintenance Operations")
@@ -4177,7 +3466,7 @@ def show_backup_recovery():
         st.markdown("**Backup Status**")
 
         last_backup = datetime.now() - timedelta(hours=2)
-        st.success(f"? Last Backup: {last_backup.strftime('%Y-%m-%d %H:%M')}")
+        st.success(f"Last Backup: {last_backup.strftime('%Y-%m-%d %H:%M')}")
 
         backup_size = "145.7 MB"
         st.info(f" Backup Size: {backup_size}")
@@ -4351,7 +3640,7 @@ def show_system_alerts():
             elif severity == 'info':
                 st.info(f" **{title}**: {message}")
             else:
-                st.success(f"? **{title}**: {message}")
+                st.success(f" **{title}**: {message}")
 
 
 def show_password_reset_form():
@@ -4474,6 +3763,7 @@ def show_quick_entry_modal():
 
                 # Generate alert for follow-up
                 generate_alert(
+                    st.session_state.db_conn, # Pass the connection
                     'data_quality', 'warning',
                     'Emergency Entry Requires Review',
                     f'Emergency data entry for {selected_individual["anonymous_id"]} needs complete documentation',
