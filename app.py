@@ -102,7 +102,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main-header {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(90deg, #0F2027 0%, #203A43 50%, #2C5364 100%); /* Dark blue gradient */
         padding: 1rem;
         border-radius: 10px;
         color: white;
@@ -113,7 +113,7 @@ st.markdown("""
         padding: 1rem;
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border-left: 4px solid #667eea;
+        border-left: 4px solid #2C5364; /* Matching border color */
     }
     .alert-success {
         background-color: #d4edda;
@@ -146,7 +146,7 @@ st.markdown("""
         background-color: #f8f9fa;
     }
     .kpi-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #0F2027 0%, #203A43 50%, #2C5364 100%); /* Dark blue gradient */
         padding: 1rem;
         border-radius: 10px;
         color: white;
