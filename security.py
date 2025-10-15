@@ -14,18 +14,14 @@ def hash_password(password: str, salt: str = None) -> Tuple[str, str]:
         salt = base64.b64encode(uuid.uuid4().bytes).decode()
 
     # Use PBKDF2 for better security
-    password_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    password_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
     return base64.b64encode(password_hash).decode(), salt
 
 
-def verify_password(password: str, password_hash: str, salt: str = None) -> bool:
-    """Verify password with enhanced security"""
-    if salt:
-        computed_hash, _ = hash_password(password, salt)
-        return computed_hash == password_hash
-    else:
-        # Fallback for legacy hashes
-        return hashlib.sha256(password.encode()).hexdigest() == password_hash
+def verify_password(password: str, stored_hash: str, stored_salt: str) -> bool:
+    """Verify password with enhanced security using the stored salt"""
+    computed_hash, _ = hash_password(password, stored_salt)
+    return computed_hash == stored_hash
 
 
 def check_password_strength(password: str) -> Dict:
@@ -55,14 +51,14 @@ def authenticate_user(conn: Any, username: str, password: str) -> Optional[Dict]
 
     # Check if account is locked
     user_data = conn.execute("""
-        SELECT id, password_hash, login_attempts, account_locked, active, password_expires, full_name, role, email
+        SELECT id, password_hash, salt, login_attempts, account_locked, active, password_expires, full_name, role, email
         FROM users WHERE username = ?
     """, [username]).fetchone()
 
     if not user_data:
         return None
 
-    user_id, stored_hash, attempts, locked, active, expires, full_name, role, email = user_data
+    user_id, stored_hash, stored_salt, attempts, locked, active, expires, full_name, role, email = user_data
 
     if locked or not active:
         return None
@@ -71,8 +67,8 @@ def authenticate_user(conn: Any, username: str, password: str) -> Optional[Dict]
     if expires and datetime.now() > expires:
         return {'error': 'password_expired'}
 
-    # Verify password (using legacy method for existing data)
-    if verify_password(password, stored_hash):
+    # Verify password using the stored salt
+    if verify_password(password, stored_hash, stored_salt):
         # Reset login attempts on successful login
         conn.execute("""
             UPDATE users 
